@@ -7,10 +7,12 @@ use App\Http\Requests\UserLoginRequest;
 use App\Http\Requests\UserRegisterRequest;
 use App\Http\Requests\UserProfileRequest;
 use App\Repositories\UserInterface;
+use App\Traits\ApiResponseTrait;
 use Illuminate\Http\Request;
 
 class AuthController extends AuthBaseController
 {
+    use ApiResponseTrait;
     // Register user
     public function register(UserRegisterRequest $request)
     {

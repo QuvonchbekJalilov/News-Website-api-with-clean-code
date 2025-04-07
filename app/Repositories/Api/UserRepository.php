@@ -5,40 +5,40 @@ namespace App\Repositories\Api;
 use App\Http\Resources\UserResource;
 use App\Interfaces\UserInterface;
 use App\Models\User;
+use App\Traits\ApiResponseTrait;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Validator;
 use Tymon\JWTAuth\Facades\JWTAuth;
 
 class UserRepository implements UserInterface
 {
+    use ApiResponseTrait;
+
     public function __construct(protected User $model) {}
 
-    // Register user
     // Register user
     public function register(array $credentials)
     {
         try {
             $user = $this->model::create([
-                'name' => $credentials['name'],
-                'email' => $credentials['email'],
-                'password' => Hash::make($credentials['password']),
+                'name'         => $credentials['name'],
+                'email'        => $credentials['email'],
+                'password'     => Hash::make($credentials['password']),
                 'phone_number' => $credentials['phone_number'] ?? null,
-                'address' => $credentials['address'] ?? null,
-                'role' => 'reader'
+                'address'      => $credentials['address'] ?? null,
+                'role'         => 'reader'
             ]);
 
             $token = JWTAuth::fromUser($user);
-
             Cache::put('user_' . $user->id, $user, 1800);
 
-            return response()->json([
-                'message' => 'User registered successfully',
-                'user' => new UserResource($user),
+            return $this->successResponse([
+                'user'  => new UserResource($user),
                 'token' => $token
-            ], 201);
+            ], 'User registered successfully', 201);
         } catch (\Exception $e) {
-            return response()->json(['error' => 'Failed to register user.', 'message' => $e->getMessage()], 500);
+            return $this->errorResponse('Failed to register user: ' . $e->getMessage(), 500);
         }
     }
 
@@ -46,29 +46,25 @@ class UserRepository implements UserInterface
     public function login(array $credentials)
     {
         if (!$token = JWTAuth::attempt($credentials)) {
-            return response()->json(['error' => 'Unauthorized'], 401);
+            return $this->errorResponse('Unauthorized', 401);
         }
 
-        $user = auth()->user();
-
+        $user = Auth::user();
         Cache::put('user_' . $user->id, $user, 1800);
 
-        return response()->json([
-            'message' => 'Login successful',
-            'token' => $token,
-            'user' => new UserResource($user)
-        ]);
+        return $this->successResponse([
+            'user'  => new UserResource($user),
+            'token' => $token
+        ], 'Login successful');
     }
 
     // Logout user
     public function logout(int $userId)
     {
         JWTAuth::invalidate(JWTAuth::getToken());
-
-        // Optionally clear cache on logout
         Cache::forget('user_' . $userId);
 
-        return response()->json(['message' => 'User logged out successfully']);
+        return $this->successResponse(null, 'User logged out successfully');
     }
 
     // Update user profile
@@ -77,23 +73,23 @@ class UserRepository implements UserInterface
         $user = $this->model->find($userId);
 
         if (!$user) {
-            return response()->json(['error' => 'User not found.'], 404);
+            return $this->errorResponse('User not found.', 404);
         }
 
-        $validated = validator($data, [
+        $validator = validator($data, [
             'name'         => ['sometimes', 'string', 'max:255'],
             'email'        => ['sometimes', 'email', 'max:255', 'unique:users,email,' . $userId],
             'phone_number' => ['nullable', 'string', 'max:15'],
             'address'      => ['nullable', 'string', 'max:255'],
-        ])->validate();
+        ]);
 
-        $user->fill($validated)->save();
+        if ($validator->fails()) {
+            return $this->validationErrorResponse($validator->errors());
+        }
 
+        $user->fill($validator->validated())->save();
         Cache::put('user_' . $userId, $user, 1800);
 
-        return response()->json([
-            'message' => 'User profile updated successfully.',
-            'user'    => new UserResource($user)
-        ]);
+        return $this->successResponse(new UserResource($user), 'User profile updated successfully.');
     }
 }
